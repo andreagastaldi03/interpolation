@@ -1,4 +1,5 @@
 #include "Interpolation/chebyshev_grid.hh"
+#include <stdexcept>
 
 namespace Interpolation
 {
@@ -43,6 +44,78 @@ StandardGrid::StandardGrid(size_t p)
 		}	
 	}
 } // StandardGrid::StandardGrid(size_t p)
+
+double StandardGrid::interpolate(double t, const vector_d &fj, size_t start, size_t end) const
+{
+	if (t < -1 || t > 1) {
+		throw std::domain_error("StandardGrid::interpolate t must be in [-1,1]"); 
+		// calling smt outside the domain 
+	}
+	if (end - start != _p) {
+		throw std::domain_error("StandardGrid::interpolate end-start should be = p");
+	}
+	double den = 0.;
+	for (size_t j=0; j<=_p; j++) {
+		// if (t == _tj[j]) return fj[j+start];
+		if (std::abs(t - _tj[j]) < 1.e-15) return fj[j + start];
+		den += _betaj[j] / (t - _tj[j]);
+	}	
+	
+	double res = 0.;
+	for (size_t i=0; i<=_p; i++) {
+		res += poli_weight(t, i, den) * fj[i+start];
+		// res += poli_weight(t, i) * fj[i+start];
+	}
+	return res;
+} // StandardGrid::interpolate
+
+double StandardGrid::interpolate_der(double t, const vector_d &fj, size_t start, size_t end) const
+{} // StandardGrid::interpolate_der
+ 
+double StandardGrid::poli_weight(double t, size_t j) const
+{
+	if (std::abs(t - _tj[j]) < 1.e-15) return 1.;
+
+	double den = 0.;
+	for (size_t j=0; j<=_p; j++) {
+		if (std::abs(t - _tj[j]) < 1.e-15) return 0.;
+		den += _betaj[j] / (t - _tj[j]);
+	}	
+
+	double res = 0.;
+	res        = _betaj[j] / (t - _tj[j]) / den;
+	
+	return res;
+} // StandardGrid::poli_weight
+ 
+double StandardGrid::poli_weight(double t, size_t j, double den) const
+{
+	if (std::abs(t - _tj[j]) < 1.e-15) return 1.;
+
+	double res = 0.;
+	res        = _betaj[j] / (t - _tj[j]) / den;
+	
+	return res;
+} // StandardGrid::poli_weight
+ 
+double StandardGrid::poli_weight_der(double t, size_t j) const
+{} // StandardGrid::poli_weight_der
+ 
+double StandardGrid::poli_weight_der(double t, size_t j, double den) const
+{} // StandardGrid::poli_weight_der
+
+void StandardGrid::apply_D(vector_d &fj, size_t start, size_t end) const
+{} // StandardGrid::apply_D
+
+vector_d StandardGrid::discretize(const std::function<double(double)> &fnc) const
+{
+	vector_d fj(_p+1, 0.);
+	for (size_t i=0; i<=_p; i++) {
+		fj[i] = fnc(_tj[i]);
+	}
+
+	return fj;
+} // StandardGrid::discretize
 
 } // namespace Chebyshev
 } // namespace Interpolation
