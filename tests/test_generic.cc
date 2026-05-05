@@ -51,7 +51,7 @@ int test_exp_function()
    double m_1 = 0, md_1 = 0.;
    double m_2 = 0, md_2 = 0.;
 
-   std::FILE *fptr = std::fopen("StandardGrid_generic_equispaced.dat", "w");
+   std::FILE *fptr = std::fopen("StandardGrid_interpolation_chebyshev.dat", "w");
    for (size_t i = 0; i < n; i++) {
       const double x       = xmin + i * dx;
       const double exact   = testfunction(x);

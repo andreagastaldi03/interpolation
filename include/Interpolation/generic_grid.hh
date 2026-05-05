@@ -135,7 +135,7 @@ struct StandardGrid {
     *
     * @param t The point in which to evaluate the derivative weight
     * @param j The index of the weight to evaluate
-    * @return  The value of the derivaive of the weight at the point (i.e. \f$ \partial w_j(t)
+    * @return  The value of the derivative of the weight at the point (i.e. \f$ \partial w_j(t)
     * /
     * \partial t\f$)
     */

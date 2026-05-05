@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/test_first_discr.dir/test_first_discr.cc.o -o test_first_discr  -Wl,-rpath,/home/andreagastaldi/computational/interpolation/tests/lib -lm ../lib/libInterpolation.so 

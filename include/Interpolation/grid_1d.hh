@@ -125,6 +125,9 @@ struct Grid1D {
    {
       return _d_info.intervals_phys[_from_idx_to_inter[index]];
    }
+   // _from_idx_to_inter[] :
+   // It says given a certain index n (all the weights, repeated if on the
+   // boundaries) it will return the interval this n is referring to
 
    /**
     * @brief Get Reference to standard grid for the given weight index
@@ -152,23 +155,46 @@ struct Grid1D {
     * by scalar values, and its element can be summed to a ReturnType variable
     */
    template <class ReturnType, class InnerType, class... Args>
+   // Instead of using specific type of variables (double, int, ecc) here it is used template, 
+   // which adapt automatically to each type. "class... Args" means that other than return and
+   // input, every other extra parameter is passed is considered.
    requires cpt::InterpolateCompatible<ReturnType, InnerType, Args...>
    ReturnType interpolate(double y, const InnerType &input,
                           const std::function<ReturnType()> &make_zero, Args &&...args) const
    {
-      const double u = _d_info.to_inter_space(y);
+      const double u = _d_info.to_inter_space(y); 
+      // y mapped to the interpolation space
       ReturnType res = make_zero();
+      // create an object of the return type initialized at zero. then i will sum all the 
+      // cointribute to return the interpolated value.
       for (size_t j = 0; j < size; j++) {
          auto supp = get_support_weight_aj(j);
+         // get the support of the j-th weight; if u out of it, skip the count. This represent
+         // the theta function of the notes. 
          if (u < supp.first || u > supp.second) continue;
+         // if constexpr is solved by compiler, not during runtime.
+         // during runtime means that all possible ways are translated in machine code (linguaggio
+         // macchina), even the ones that are not percurred. If solved compile-time, the compiler
+         // evaluate which part of the code translate, deleting the other.This to avoid fatal 
+         // errors during compiling if some functions are not defined for a specific input type.
          if constexpr (cpt::InterpolateCompatibleIndex<ReturnType, InnerType>) {
             res += input[_from_iw_to_ic[j]] * _weights[j](u, get_std_grid(j));
          } else if constexpr (cpt::InterpolateCompatibleEvaluate<ReturnType, InnerType, Args...>) {
             res += input[_from_iw_to_ic[j]].Evaluate(std::forward<Args>(args)...)
                  * _weights[j](u, get_std_grid(j));
+            // if the objects have .Evaluate() method, use this.
+            // using std::forward<Args>(args)... means that if the input needs some parameters, 
+            // due to the fact that the function interpolate wants to be universal, must considers
+            // this eventuality, using args i'm passing this extra parameters to .Evaluate(), 
+            // whatever these parameters could be. std::forward means passing the parameters 
+            // without making a copy of them, without altering them in any way. the final "..."
+            // means that the parameters are written inside of the parenthesis of the function.
          } else if constexpr (cpt::InterpolateCompatibleFunctor<ReturnType, InnerType, Args...>) {
             res += input[_from_iw_to_ic[j]](std::forward<Args>(args)...)
                  * _weights[j](u, get_std_grid(j));
+            // if they are functor (list of functions), use this.
+            // a functor is an object (class of functor) which behaves exactly like a function.
+            // if you do the overload of the operator(), you have created a functor.
          } else {
             throw std::invalid_argument("Cannot interpolate");
          }
@@ -198,14 +224,15 @@ struct Grid1D {
    ReturnType interpolate_der(double y, const InnerType &input,
                               const std::function<ReturnType()> &make_zero, Args &&...args) const
    {
-      const double u   = _d_info.to_inter_space(y);
-      const double jac = _d_info.to_inter_space_der(y);
+      const double u   = _d_info.to_inter_space(y); // u = eta(y)
+      const double jac = _d_info.to_inter_space_der(y); // jac = du / dy
       ReturnType res   = make_zero();
       for (size_t j = 0; j < size; j++) {
          auto supp = get_support_weight_aj(j);
          if (u < supp.first || u > supp.second) continue;
          if constexpr (cpt::InterpolateCompatibleIndex<ReturnType, InnerType>) {
             res += input[_from_iw_to_ic[j]] * jac * _weights_der[j](u, get_std_grid(j));
+            // _weights_der = dw / du; it is multiplied by du / dy in order to obtain d / dy.
          } else if constexpr (cpt::InterpolateCompatibleEvaluate<ReturnType, InnerType, Args...>) {
             res += input[_from_iw_to_ic[j]].Evaluate(std::forward<Args>(args)...) * jac
                  * _weights_der[j](u, get_std_grid(j));
@@ -274,6 +301,9 @@ struct Grid1D {
    /// Discretization infos
    SingleDiscretizationInfo _d_info;
    /// Stored StandardGrids
+   /// This map associate for each key a grid. The key is the degree of the Chebyshev grid. 
+   /// Doing this, I have to save only once the grid on [-1,1] for a specific degree, and then
+   /// I can reuse it everytime I need.
    std::map<size_t, Chebyshev::StandardGrid> _stored_grids;
    /// The intepolating weights
    std::vector<std::function<double(double, const Chebyshev::StandardGrid &)>> _weights;

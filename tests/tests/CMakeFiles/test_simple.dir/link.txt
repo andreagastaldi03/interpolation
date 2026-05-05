@@ -1,0 +1,1 @@
+/usr/bin/c++ -O3 -DNDEBUG CMakeFiles/test_simple.dir/test_simple.cc.o -o test_simple  -Wl,-rpath,/home/andreagastaldi/computational/interpolation/tests/lib -lm ../lib/libInterpolation.so 

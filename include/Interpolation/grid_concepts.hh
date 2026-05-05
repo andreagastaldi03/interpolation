@@ -173,9 +173,9 @@ concept InterpolateCompatible2D = InterpolateCompatible2DIndex<ReturnType, Inner
  */
 template <class K>
 concept isPIM = requires(double x) {
-   { K::tis(x) } -> std::same_as<double>;
+   { K::tis(x) } -> std::same_as<double>; // to interpolate space
    { K::tis_d(x) } -> std::same_as<double>;
-   { K::tps(x) } -> std::same_as<double>;
+   { K::tps(x) } -> std::same_as<double>; // to physical space
    { K::tps_d(x) } -> std::same_as<double>;
 };
 
