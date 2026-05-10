@@ -10,6 +10,7 @@ set(TEST_SOURCES
    test_chebyshev.cc
    test_generic.cc
    test_grid_1d.cc
+   test_quadrature.cc
 )
 
 foreach(TEST_SOURCE ${TEST_SOURCES})
