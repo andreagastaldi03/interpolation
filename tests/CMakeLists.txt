@@ -11,6 +11,7 @@ set(TEST_SOURCES
    test_generic.cc
    test_grid_1d.cc
    test_quadrature.cc
+   test_ogata.cc
 )
 
 foreach(TEST_SOURCE ${TEST_SOURCES})
