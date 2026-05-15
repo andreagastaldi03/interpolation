@@ -59,6 +59,14 @@ public:
    std::function<double(double)> to_phys_space_der;
 };
 
+template <class PIM>
+requires cpt::isPIM<PIM>
+static SingleDiscretizationInfo make_discretization_info(std::vector<double> inter,
+                                                         std::vector<size_t> g_size)
+{
+   return SingleDiscretizationInfo(inter, g_size, PIM::tis, PIM::tis_d, PIM::tps, PIM::tps_d);
+};
+
 /**
  * @brief Grid1D struct
  *

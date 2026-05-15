@@ -1,3 +1,4 @@
+#include "Interpolation/gauss_kronrod.hh"
 #include <Interpolation/grid_1d.hh>
 
 namespace Interpolation
@@ -179,6 +180,34 @@ Grid1D::Grid1D(const SingleDiscretizationInfo &d_info) : _d_info(d_info)
    _from_ic_to_iw.resize(c_size);
    for (size_t i = 0; i < _from_iw_to_ic.size(); i++) {
       _from_ic_to_iw[_from_iw_to_ic[i]].push_back(i);
+   }
+
+   {
+      using integrator = GaussKronrod<GK_41>;
+
+      _integral_weights.resize(c_size_li, 0.);
+
+      size_t i_w;
+
+      std::function<double(double)> full_integrand = [&](double v) -> double {
+         return _d_info.to_phys_space_der(v) * _weights[i_w](v, get_std_grid(i_w));
+      };
+
+      for (size_t j = 0; j < size; j++) {
+
+         size_t j_c = _from_iw_to_ic[j];
+
+         i_w = j;
+
+         auto [vmin, vmax] = get_support_weight_aj(j);
+
+         if (std::fabs(vmax - vmin) < 1.0e-15) {
+            continue;
+         }
+         _integral_weights[j_c]
+             += integrator::integrate(full_integrand, vmin, vmax, 1.0e-10, 1.0e-10);
+
+      } // j-loop
    }
 }
 
