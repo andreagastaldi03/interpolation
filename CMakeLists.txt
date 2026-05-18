@@ -53,7 +53,7 @@ target_compile_options(Interpolation
 target_compile_options(Interpolation
   PUBLIC
     $<$<CONFIG:Release>:-O3 -funroll-loops>
-    $<$<CONFIG:RelWithDebInfo>:-O2 -g -funroll-loops>
+    $<$<CONFIG:RelWithDebInfo>:-O2 -g -funroll-loops -fsanitize=address,undefined,alignment,bounds,null,vptr>
     $<$<CONFIG:Debug>:-O0 -g -funroll-loops>
 )
 
