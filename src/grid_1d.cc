@@ -221,7 +221,7 @@ Grid1D::Grid1D(const SingleDiscretizationInfo &d_info) : _d_info(d_info)
                 }
                 return res;
             }; // this will be used with integration of the function, if presence of singolarity
-
+            
             index_t inner_index = 0;
             for (size_t b=0; b<d_info.intervals.size(); b++) {
                 for (size_t k=0; k<=d_info.grid_sizes[b]; k++) {
@@ -247,26 +247,7 @@ Grid1D::Grid1D(const SingleDiscretizationInfo &d_info) : _d_info(d_info)
         // two different values at the same index l if I'm at the boundary and one if not.
     }
 
-} // Grid1d::Grid1d
-
-<<<<<<< HEAD
-         index_t inner_index = 0;
-         for (size_t b = 0; b < d_info.intervals.size(); b++) {
-            for (size_t k = 0; k <= d_info.grid_sizes[b]; k++) {
-               _der_matrix[index][inner_index++] = get_der_matrix(a, j, b, k);
-            }
-         }
-         index++;
-      }
-   }
-   _delim_indexes[d_info.intervals.size()] = index;
-
-   _from_ic_to_iw.resize(c_size);
-   for (size_t i = 0; i < _from_iw_to_ic.size(); i++) {
-      _from_ic_to_iw[_from_iw_to_ic[i]].push_back(i);
-   }
-
-   {
+    {
       using integrator = GaussKronrod<GK_41>;
 
       _integral_weights.resize(c_size_li, 0.);
@@ -296,6 +277,4 @@ Grid1D::Grid1D(const SingleDiscretizationInfo &d_info) : _d_info(d_info)
 }
 
 } // namespace Interpolation
-=======
-} // namespace Interpolation
->>>>>>> 7d6a979 (scaricamento konrod)
+
