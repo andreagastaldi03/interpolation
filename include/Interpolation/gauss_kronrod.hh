@@ -332,3 +332,4 @@ double GaussKronrod<Rule>::integrate_rec(const std::function<double(double)> &fn
 }
 
 } // namespace Interpolation
+
