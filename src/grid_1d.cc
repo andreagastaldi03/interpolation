@@ -249,31 +249,147 @@ Grid1D::Grid1D(const SingleDiscretizationInfo &d_info) : _d_info(d_info)
 
     {
       using integrator = GaussKronrod<GK_41>;
+      // Decides to use Gauss Konrod as integrator
 
       _integral_weights.resize(c_size_li, 0.);
+      // Prepare vector for the integral -> calc as a sum of f(node) * weights, where the
+      // weight is the integral on the interval of the weight for the interpolation.
+      // It's necessary to store a vector with number of values equal to the number
+      // of physical nodes, without duplicates 
 
       size_t i_w;
 
       std::function<double(double)> full_integrand = [&](double v) -> double {
          return _d_info.to_phys_space_der(v) * _weights[i_w](v, get_std_grid(i_w));
       };
+      // [&] means the function is able to see and use all the variables, by references,
+      // so if something changes the function see it immediately
+      // it takes as input variable v, we are integrating on interpolating space, not 
+      // physical one. it returns to_phys_space_der(v), which is the jacobian due to the 
+      // change of variable (to interpolating space, function is dx/dv), multiplied by
+      // the value of the weight calc in v.
 
       for (size_t j = 0; j < size; j++) {
+      // size number total of weights, also duplicates
 
          size_t j_c = _from_iw_to_ic[j];
 
          i_w = j;
+         // assign to this variable the value of j, changing the value given to the 
+         // full_integrand since given by references. In this way is possible to calc
+         // integral of the correct weight
 
          auto [vmin, vmax] = get_support_weight_aj(j);
+         // Get the support of the j-th weight in interpolation space, out from it 
+         // integral goes to zero.
 
          if (std::fabs(vmax - vmin) < 1.0e-15) {
             continue;
          }
          _integral_weights[j_c]
              += integrator::integrate(full_integrand, vmin, vmax, 1.0e-10, 1.0e-10);
+         // it calls gauss konrod library to integrate everything, take the result and 
+         // sum in _integral_weights[j_c], using += and not only = bc if j_c is the 
+         // junction between two intervals, the for will pass twice summing the "half"
+         // areas
 
       } // j-loop
    }
+}
+
+vector_d Grid1D::integrate(const std::function<double(double)> &integrand, double eps) const
+{
+    using integrator = GaussKronrod<GK_41>;
+    
+    // Inizializza il vettore dei risultati a zero
+    vector_d V(c_size, 0.0);
+
+    for (size_t j = 0; j < size; j++) {
+        size_t j_c = _from_iw_to_ic[j];
+        auto [vmin, vmax] = get_support_weight_aj(j);
+
+        if (std::fabs(vmax - vmin) < 1.0e-15) continue;
+
+        // Nuova funzione da integrare: include integrand(y)
+        std::function<double(double)> full_integrand = [&](double v) -> double {
+            // 1. Trovo la coordinata fisica y
+            double y = _d_info.to_phys_space(v);
+            // 2. Moltiplico: K(y) * Jacobiano * w_j(v)
+            return integrand(y) * _d_info.to_phys_space_der(v) * _weights[j](v, get_std_grid(j));
+        };
+
+        // Calcolo e sommo nel "cassetto" del nodo fisico
+        V[j_c] += integrator::integrate(full_integrand, vmin, vmax, eps, eps);
+    }
+    return V;
+}
+
+matrix_d Grid1D::integrate(
+    const std::function<double(double, double)> &integrand,
+    const std::function<double(double)> &weight_fnc) const
+{
+    using integrator = GaussKronrod<GK_41>;
+    
+    // Assumendo che matrix_d abbia un costruttore (righe, colonne)
+    matrix_d M(c_size, c_size); 
+    // NOTA: Se matrix_d usa std::vector, potrebbe servire un resize manuale
+
+    // Ciclo esterno: fisso il nodo fisico x_i
+    for (size_t i = 0; i < c_size; i++) {
+        double xi = _coord[i];
+
+        // Ciclo interno: integro sulle funzioni di base w_j (uguale a prima)
+        for (size_t j = 0; j < size; j++) {
+            size_t j_c = _from_iw_to_ic[j];
+            auto [vmin, vmax] = get_support_weight_aj(j);
+
+            if (std::fabs(vmax - vmin) < 1.0e-15) continue;
+
+            std::function<double(double)> full_integrand = [&](double v) -> double {
+                double y = _d_info.to_phys_space(v);
+                // Moltiplico: K(xi, y) * Q(y) * Jacobiano * w_j(v)
+                return integrand(xi, y) * weight_fnc(y) * _d_info.to_phys_space_der(v) * _weights[j](v, get_std_grid(j));
+            };
+
+            // M(riga i, colonna j_c)
+            M(i, j_c) += integrator::integrate(full_integrand, vmin, vmax, 1.0e-10, 1.0e-10); 
+        }
+    }
+    return M;
+}
+
+vector_d Grid1D::integrate_subtr(const std::function<double(double)> &integrand) const
+{
+    using integrator = GaussKronrod<GK_41>;
+    vector_d V(c_size, 0.0);
+
+    for (size_t j = 0; j < size; j++) {
+        size_t j_c = _from_iw_to_ic[j];
+        auto [vmin, vmax] = get_support_weight_aj(j);
+
+        if (std::fabs(vmax - vmin) < 1.0e-15) continue;
+
+        std::function<double(double)> full_integrand = [&](double v) -> double {
+            double y = _d_info.to_phys_space(v);
+            
+            // Il trucco è qui: usiamo _weights_sub invece di _weights!
+            // _weights_sub contiene analiticamente (w - 1)
+            double peso = _weights_sub[j](v, get_std_grid(j));
+            
+            return integrand(y) * _d_info.to_phys_space_der(v) * peso;
+        };
+
+        V[j_c] += integrator::integrate(full_integrand, vmin, vmax, 1.0e-10, 1.0e-10);
+    }
+    
+    // Al risultato del nodo 0 (la singolarità), la matematica richiede 
+    // di ri-sommare l'integrale puro di K(y) senza pesi
+    // (vedi le tue dispense o la formula nel commento .hh)
+    
+    // Opzionale: calcolo integrale_puro = \int K(y) dy
+    // V[0] += integrale_puro;
+
+    return V;
 }
 
 } // namespace Interpolation
