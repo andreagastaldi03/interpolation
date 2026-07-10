@@ -198,7 +198,7 @@ int main ()
     rk::vd<1> phi_initial;
     phi_initial[0] = 1.0; // fluenza a z=0, sul bordo del fantoccio, 100%
     std::vector<double> z_points;
-    for(int i=0; i <=30; i++) {
+    for(int i=0; i <=50; i++) {
         z_points.push_back(i * 0.5); // passi di 0.5 cm
     }
     // TimeInfo gestisce la griglia, chiamato time ma per noi è spazio
@@ -259,6 +259,124 @@ int main ()
         worst_z_abs << " cm)" << std::endl;
     std::cout << "Errore Relativo Massimo: " << max_rel_err_ode * 100.0 << " % (z = " 
         << worst_z_rel << " cm)" << std::endl;
-   
+
+////////////////////////////////////////////////////////////////////////////////////
+// FINE CALCOLO ODE RK
+// INIZIO CALCOLO DOSE
+////////////////////////////////////////////////////////////////////////////////////
+    
+    std::cout << "\n" << std::endl;
+
+    // 1. definizione del kernel 
+    // a = controlla la pendenza / A fattore di normalizzazione
+    double a_pr = 2.0; // elettroni primari, decadimento rapido
+    double A_pr = a_pr / 2.0;
+
+    // funzione kernel semplificata
+    auto dose_kernel = [A_pr, a_pr](double distanza) {
+        return A_pr * std::exp(-a_pr * std::abs(distanza));
+    };
+
+    // 2. esecuzione dell'integrale discreto
+    std::ofstream out_dose_riemann("profilo_dose.dat");
+    std::vector<double> dose_history_riemann;
+
+    std::cout << "Calcolo dose con Somma di Riemann." << std::endl;
+
+    for (size_t i=0; i<z_history.size(); i++) {
+       double z = z_history[i];
+       double dose_z = 0.0;
+
+        // somma di riemann, integro su tutti gli z'
+        for (size_t j=0; j<z_history.size()-1; j++) {
+            double z_prime = z_history[j];
+            double terma_prime = terma_history[j];
+            // passo di integrazione dz'
+            double dz_prime = z_history[j+1] - z_history[j];
+            // distanza tra il punto di interazione e il punto di calcolo
+            double distanza = z - z_prime;
+
+            dose_z += terma_prime * dose_kernel(distanza) * dz_prime;
+        }
+        dose_history_riemann.push_back(dose_z);
+
+        out_dose_riemann << z << " " << terma_history[i] << " " << dose_z << "\n";
+    }
+    out_dose_riemann.close();
+
+    // 1. definizione kernel 
+    double c_p = 0.7; // 70% componente elettroni primari
+    double c_s = 0.3; // 30% componente scatter
+    double a_p = 5.0; // elettroni primari, decadimento rapido
+    double A_p = c_p * a_p;
+    double a_s = 0.25; // scatter compton, decadimento lento
+    double A_s = c_s * a_s;
+
+    auto kernel = [A_p, a_p, A_s, a_s](double distanza) {
+        double d = std::abs(distanza);
+        return (A_p * std::exp(-a_p*d)) + (A_s * std::exp(-a_s*d));
+    };
+
+    // 2. definizione terma continuo - ponte spaziale (spezzata)
+    auto terma_raw_linear = [&](double z_req) {
+        auto it = std::lower_bound(z_history.begin(), z_history.end(), z_req);
+        if (it == z_history.begin()) return terma_history.front();
+        if (it == z_history.end()) return terma_history.back();
+
+        int i = std::distance(z_history.begin(), it);
+        double z0 = z_history[i-1], z1 = z_history[i];
+        double t0 = terma_history[i-1], t1 = terma_history[i];
+
+        return t0 + (t1 - t0) * (z_req - z0) / (z1 - z0);
+    };
+
+    // 3. definizione terma continuo - grid tassellazione chebishev
+    std::vector<double> tasselli_z = {0.0, 5.0, 10.0, 15.0, 20.0, 25.0};
+    std::vector<size_t> gradi_z = {15, 15, 15, 15, 15};
+
+    Interpolation::Grid1D grid_terma(
+        Interpolation::make_discretization_info<Interpolation::details::identity_maps>(tasselli_z, gradi_z)        
+    );
+
+    std::vector<double> fj_terma = Interpolation::Discretize<std::vector<double>, double>(
+        grid_terma,
+        terma_raw_linear,
+        [](size_t n) {return std::vector<double>(n, 0.);}        
+    );
+
+    // 4. definizione terma continuo - funzione finale liscia
+    auto terma_continuo = [&](double z_req) {
+        return grid_terma.interpolate<double, std::vector<double>>(
+            z_req, fj_terma, []() -> double {return 0.;}        
+        );
+    };
+    std::cout << "TERMA discretizzato spazialmente su Grid1D." << std::endl;
+
+    // 5. integrale di gauss-kronrod
+    std::ofstream out_dose("profilo_dose_gk.dat");
+    double z_max = z_history.back(); // integriamo su tutto lo spessore
+    double toll_rel = 1.0e-5;
+    double toll_abs = 1.0e-8;
+
+    std::cout << "Calcolo dose con quadratura Gauss-Kronrod." << std::endl;
+
+    for (double z=0.0; z<=15.0; z+=0.1) { // integro su 15 cm ignorando padding 
+                                          // finale
+        // definisco integranda per lo specifico z
+        auto integranda = [&](double z_prime) {
+            return terma_continuo(z_prime) * kernel(z - z_prime);
+        };
+
+        // routine di quadratura
+        double dose_z = Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integranda, 0.0, z_max, toll_rel, toll_abs);
+
+        out_dose << z << " " << terma_continuo(z) << " " << dose_z << "\n";
+    }
+    out_dose.close();
+
+    std::cout << "Calcolo dose completato." << std::endl;
+    std::cout << "Dati salvati in profilo_dose.dat e profilo_dose_gk.dat" 
+        << std::endl; 
+  
     return 0;
 }
