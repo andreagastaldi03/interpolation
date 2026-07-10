@@ -1,0 +1,264 @@
+#include <iostream>
+#include <vector>
+#include <fstream>
+#include <cmath>
+#include <algorithm>
+
+#include "Interpolation/interpolation.hh"
+#include "runge_kutta.hh"
+
+
+int main ()
+{
+    // 1. lettura file di testo contenente attenuazione
+    std::vector<double> E_data;
+    std::vector<double> mu_data;
+
+    std::ifstream file("nist_water.txt");
+    if (!file.is_open()) {
+        std::cerr << "Errore: Impossibile trovare nist_water.txt" 
+            << std::endl;
+        return 1;
+    }
+
+    double E_val, mu_val;
+    while (file >> E_val >> mu_val) {
+        E_data.push_back(E_val);
+        mu_data.push_back(mu_val);
+    }
+    file.close();
+    std::cout << "Letti " << E_data.size() << " punti dal database NIST."
+        << std::endl;
+
+    const double E_min = E_data.front(); // MeV
+    const double E_max = E_data.back();  // MeV
+
+    // 2. interpolatore loglog sui dati
+    // questa funzione lambda prende un E qualsiasi e calcola il mu_rho 
+    auto mu_raw_loglog = [&](double E_req) {
+        auto it = std::lower_bound(E_data.begin(), E_data.end(), E_req);
+        // trova il primo punto E_data >= E_req
+
+        // gestione dei bordi
+        if (it == E_data.begin()) return mu_data.front();
+        if (it == E_data.end()) return mu_data.back();
+
+        // indici dei due punti in cui cade E_req
+        int i = std::distance(E_data.begin(), it);
+        double E1 = E_data[i-1], E2 = E_data[i];
+        double m1 = mu_data[i-1], m2 = mu_data[i];
+
+        // interpolazione loglog
+        // y=exp(log(y1)+(log(y2)-log(y1))*(log(x)-log(x1))/(log(x2)-log(x1))) 
+        double log_E1 = std::log(E1);
+        double log_E2 = std::log(E2);
+        double log_E_req = std::log(E_req);
+        double log_m1 = std::log(m1);
+        double log_m2 = std::log(m2);
+
+        double log_m_req = log_m1 + (log_m2 - log_m1) * (log_E_req - log_E1)
+            / (log_E2 - log_E1);
+        return std::exp(log_m_req);
+    };
+
+    // 3. creazione grid sull'intervallo usando tassellazione
+    std::vector<double> tasselli = {E_data.front(), 0.05, 0.1, 1, 5, E_data.back()};
+    std::vector<size_t> gradi = {20, 20, 20, 20, 20};
+    
+    Interpolation::Grid1D grid(
+            Interpolation::make_discretization_info<Interpolation::details::log_0_maps>(tasselli, gradi));
+
+    auto function_for_chebyshev = [&](double E) {
+        return std::log(mu_raw_loglog(E));
+    };
+
+    std::vector<double> fj = Discretize<std::vector<double>, double>(
+            grid,
+            function_for_chebyshev,
+            [](size_t n) {return std::vector<double>(n, 0.); }
+    );
+
+    std::cout << "Dati NIST discretizzati in una Grid1D a " << gradi.size() 
+        << " tasselli." << std::endl;
+
+    //double E_test = 1.75;
+    //double exact_mu = mu_raw_loglog(E_test);
+
+    //double log_interpolated_mu = grid.interpolate<double, std::vector<double>>(
+    //    E_test, fj, []() -> double {return 0.;}
+    //);
+
+    //double interpolated_mu = std::exp(log_interpolated_mu);
+
+    // 4. stampa di dati per plot confronto mu ricostruiti da dati NIST e mu interp
+    std::ofstream out("confronto_mu.dat");
+    for(int i=0; i<1000; ++i) {
+        double E = E_min * std::exp(i * std::log(E_max/E_min) / (1000-1));
+        
+        double log_interp = grid.interpolate<double, std::vector<double>>(
+            E, fj, []() -> double {return 0.;}    
+        );
+
+        double val_interp = std::exp(log_interp);
+    out << E << " " << mu_raw_loglog(E) << " " << val_interp  << std::endl;
+    }
+    out.close();
+    std::cout << "Dati salvati in confronto_mu.dat" << std::endl;
+
+    // 5. analisi globale degli errori su tutto l'intervallo
+    int n_test = 10000;
+    double max_abs_err = 0.;
+    double max_rel_err = 0.;
+    double min_abs_err = 100.;
+    double min_rel_err = 1.;
+
+    double sum_rel_err = 0.;
+    double E_worst_abs = 0.;
+    double E_worst_rel = 0.;
+    double E_best_abs = 0.;
+    double E_best_rel = 0.;
+
+    for(int i=0; i<n_test; i++) {
+        double E = E_min * std::exp(i * std::log(E_max / E_min) / (n_test - 1));
+
+        double exact = mu_raw_loglog(E);
+        double log_interp = grid.interpolate<double, std::vector<double>>(
+            E, fj, []() -> double {return 0.;}
+        );
+        double interp = std::exp(log_interp);
+
+        double abs_err = std::abs(exact - interp);
+        double rel_err = abs_err / exact;
+
+        if (abs_err > max_abs_err) {
+            max_abs_err = abs_err;
+            E_worst_abs = E;
+        }
+        if (rel_err > max_rel_err) {
+            max_rel_err = rel_err;
+            E_worst_rel = E;
+        }
+
+        if (abs_err < min_abs_err) {
+            min_abs_err = abs_err;
+            E_best_abs = E;
+        }
+        if (rel_err < min_rel_err) {
+            min_rel_err = rel_err;
+            E_best_rel = E;
+        }
+        sum_rel_err += rel_err;
+    }
+    double mean_rel_err = sum_rel_err / n_test;
+
+    std::cout << "\nRisultati del Test di Interpolazione, " << n_test 
+        << " punti valutati." << std::endl;
+    //std::cout << "Energia richiesta: " << E_test << " MeV" << std::endl;
+    //std::cout << "Valore Esatto:      " << exact_mu << std::endl;
+    //std::cout << "Valore Interpolato: " << interpolated_mu << std::endl;
+    //std::cout << "Errore assoluto:    " << std::abs(exact_mu - interpolated_mu) 
+    //    << std::endl;
+    std::cout << "Errore Assoluto Massimo: " << max_abs_err << " (E = " 
+        << E_worst_abs << " MeV)" << std::endl;
+    std::cout << "Errore Relativo Massimo: " << max_rel_err * 100 << "% (E = " 
+        << E_worst_rel << " MeV)" << std::endl;
+    std::cout << "Errore Assoluto Minimo: " << min_abs_err << " (E = " 
+        << E_best_abs << " MeV)" << std::endl;
+    std::cout << "Errore Relativo Minimo: " << min_rel_err * 100 << "% (E = " 
+        << E_best_rel << " MeV)" << std::endl;
+    std::cout << "Errore Relativo Medio: " << mean_rel_err * 100 << "%" << std::endl;
+
+////////////////////////////////////////////////////////////////////////////////////
+// FINE PARTE CALCOLO MU
+// INIZIO CALCOLO ODE RK
+////////////////////////////////////////////////////////////////////////////////////
+
+    std::cout << "\n" << std::endl;
+
+    // 1. energia e mu del test
+    double E_beam = 0.75;
+    double log_mu = grid.interpolate<double, std::vector<double>>(
+        E_beam, fj, []() -> double {return 0.;});
+    double mu_const = std::exp(log_mu);
+
+    std::cout << "Simulazione fascio a " << E_beam << " MeV / mu = " << mu_const
+        << std::endl;
+
+    // 2. funzione rhs (right hand side)
+    // solutore passa a un vettore state, ne leggiamo il valore e lo sovrasciviamo
+    // col valore della derivata
+    rk::rk_rhs_t<rk::vd<1>> rhs = [mu_const](double z, rk::vd<1>& state) {
+        double current_phi = state(0); // leggiamo fluenza attuale
+        
+        state[0] = -mu_const * current_phi; // scriviamo la derivata
+                                            // dPhi/dz = - mu Phi
+    };
+
+    // 3. condizioni iniziali
+    rk::vd<1> phi_initial;
+    phi_initial[0] = 1.0; // fluenza a z=0, sul bordo del fantoccio, 100%
+    std::vector<double> z_points;
+    for(int i=0; i <=30; i++) {
+        z_points.push_back(i * 0.5); // passi di 0.5 cm
+    }
+    // TimeInfo gestisce la griglia, chiamato time ma per noi è spazio
+    rk::TimeInfo spatial_info(z_points);
+
+    // 4. inizializzazione solutore
+    rk::RungeKutta<rk::vd<1>, 4> solver(
+        rk::PreImplementedTableau::RKOriginal, // tab butcher per RK4
+        phi_initial,                           // condizione iniziale a z=0
+        spatial_info,                          // punti spaziali
+        rhs                                    // equazione
+    );
+
+    // 5. callback, esportiamo i dati passo passo mentre risolve
+    std::ofstream out_ode("fluenza_terma_z.dat");
+    std::vector<double> z_history;
+    std::vector<double> terma_history;
+
+    double max_abs_err_ode = 0.0;
+    double max_rel_err_ode = 0.0;
+    double worst_z_abs = 0.0;
+    double worst_z_rel = 0.0;
+
+    rk::rk_callback_t<rk::vd<1>> callback = [&](double z, const rk::TimeInfo&, 
+            const rk::vd<1>& phi) {
+        double fluenza_attuale = phi(0);
+        double esatta = std::exp(-mu_const * z);
+        double terma_attuale = mu_const * E_beam * fluenza_attuale;
+        
+        double abs_err = std::abs(fluenza_attuale-esatta);
+        double rel_err = (esatta > 0.0) ? (abs_err / esatta) : 0.0;
+
+        if (abs_err > max_abs_err_ode) {
+            max_abs_err_ode = abs_err;
+            worst_z_abs = z;
+        }
+        if (rel_err > max_rel_err_ode) {
+            max_rel_err_ode = rel_err;
+            worst_z_rel = z;
+        }
+        z_history.push_back(z);
+        terma_history.push_back(terma_attuale);
+
+        out_ode << z << " " << fluenza_attuale << " " << esatta 
+            << terma_attuale << "\n";
+    };
+    solver.AddCallback(callback);
+    solver.CallbackOnlyOnTimeStamp(); // stampa solo ai z_points definiti da noi
+
+    // 6. risoluzione
+    std::cout << "Avvio propagazione del fascio nel mezzo." << std::endl;
+    solver();
+    out_ode.close();
+    std::cout << "Propagazione completata " << std::endl;
+    std::cout << "Dati salvati fluenza_terma.dat" << std::endl;
+
+    std::cout << "Errore Assoluto Massimo: " << max_abs_err_ode << " (z = " <<
+        worst_z_abs << " cm)" << std::endl;
+    std::cout << "Errore Relativo Massimo: " << max_rel_err_ode * 100.0 << " % (z = " 
+        << worst_z_rel << " cm)" << std::endl;
+   
+    return 0;
+}
