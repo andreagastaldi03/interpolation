@@ -1,37 +1,64 @@
 void plot_mu() {
-    // 1. Crea la finestra grafica (Canvas)
-    TCanvas *c1 = new TCanvas("c1", "Confronto Attenuazione NIST vs Chebyshev", 800, 600);
+    TCanvas *c_mu = new TCanvas("c_mu", "Coefficienti di Attenuazione NIST", 800, 600);
     
-    // 2. Imposta la scala logaritmica su entrambi gli assi
-    c1->SetLogx();
-    c1->SetLogy();
-    c1->SetGrid(); // Aggiunge la griglia per leggere meglio i valori
+    // Attiviamo la scala logaritmica su entrambi gli assi (fondamentale per mu!)
+    gPad->SetLogx();
+    gPad->SetLogy();
+    gPad->SetGrid();
 
-    // 3. Legge i dati dal file generato dal tuo programma
-    // Il primo TGraph legge colonna 1 (E) e colonna 2 (NIST)
-    TGraph *g_nist = new TGraph("confronto_mu.dat", "%lg %lg");
+    // ==========================================
+    // 1. LETTURA DATI
+    // ==========================================
+    // File 1: Attenuazione Totale (mu)
+    TGraph *g_mu_exact  = new TGraph("confronto_mu.dat", "%lg %lg %*lg");
+    TGraph *g_mu_interp = new TGraph("confronto_mu.dat", "%lg %*lg %lg");
+
+    // File 2: Assorbimento di Energia (mu_en)
+    TGraph *g_mu_en_exact  = new TGraph("confronto_mu_en.dat", "%lg %lg %*lg");
+    TGraph *g_mu_en_interp = new TGraph("confronto_mu_en.dat", "%lg %*lg %lg");
+
+    // ==========================================
+    // 2. STYLING DELLE CURVE
+    // ==========================================
+    // MU TOTALE (Blu)
+    g_mu_exact->SetLineColor(kBlue+2);
+    g_mu_exact->SetLineWidth(5);       // Linea spessa di background per il dato esatto
+
+    g_mu_interp->SetLineColor(kCyan);
+    g_mu_interp->SetLineStyle(7);      // Tratteggiata per mostrare l'interpolazione che vi si adagia
+    g_mu_interp->SetLineWidth(2);
+
+    // MU ENERGIA (Rosso/Arancio)
+    g_mu_en_exact->SetLineColor(kRed+2);
+    g_mu_en_exact->SetLineWidth(5);
+
+    g_mu_en_interp->SetLineColor(kOrange+1);
+    g_mu_en_interp->SetLineStyle(7);
+    g_mu_en_interp->SetLineWidth(2);
+
+    // ==========================================
+    // 3. MULTIGRAPH E PLOT
+    // ==========================================
+    TMultiGraph *mg = new TMultiGraph();
+    mg->SetTitle("Confronto Dati NIST vs Interpolazione Chebyshev;Energia (MeV);Coefficiente Massico (cm^{2}/g)");
     
-    // Il secondo TGraph legge colonna 1 (E) e colonna 3 (Chebyshev), saltando la 2 (%*lg)
-    TGraph *g_cheb = new TGraph("confronto_mu.dat", "%lg %*lg %lg");
+    mg->Add(g_mu_exact, "L");
+    mg->Add(g_mu_interp, "L");
+    mg->Add(g_mu_en_exact, "L");
+    mg->Add(g_mu_en_interp, "L");
 
-    // 4. Stile della linea NIST (Blu, solida)
-    g_nist->SetTitle("Attenuazione Fotoni in Acqua;Energia E (MeV);#mu/\\rho (cm^{2}/g)");
-    g_nist->SetLineColor(kBlue);
-    g_nist->SetLineWidth(3);
-    
-    // 5. Stile della linea Chebyshev (Rossa, tratteggiata)
-    g_cheb->SetLineColor(kRed);
-    g_cheb->SetLineStyle(7);
-    g_cheb->SetLineWidth(3);
+    mg->Draw("A");
 
-    // 6. Disegna i grafici (AL = Assi e Linea, L SAME = Linea sovrapposta al precedente)
-    g_nist->Draw("AL");
-    g_cheb->Draw("L SAME");
-
-    // 7. Aggiunge una legenda in alto a destra
-    TLegend *leg = new TLegend(0.65, 0.75, 0.88, 0.88);
-    leg->AddEntry(g_nist, "Dati NIST (Ponte Log-Log)", "l");
-    leg->AddEntry(g_cheb, "Interpolazione Chebyshev", "l");
-    leg->SetBorderSize(0);
+    // ==========================================
+    // 4. LEGENDA
+    // ==========================================
+    TLegend *leg = new TLegend(0.60, 0.65, 0.88, 0.88);
+    leg->AddEntry(g_mu_exact,  "\\mu/\\rho Dato Esatto NIST", "l");
+    leg->AddEntry(g_mu_interp, "\\mu/\\rho Interpolato", "l");
+    leg->AddEntry(g_mu_en_exact,  "\\mu_{en}/\\rho Dato Esatto", "l");
+    leg->AddEntry(g_mu_en_interp, "\\mu_{en}/\\rho Interpolato", "l");
+    leg->SetTextSize(0.03);
+    leg->SetTextFont(42);
+    leg->SetBorderSize(1);
     leg->Draw();
 }

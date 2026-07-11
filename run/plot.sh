@@ -15,4 +15,4 @@ fi
 
 # Lancia ROOT eseguendo direttamente la macro
 # -l : toglie il banner testuale iniziale di ROOT
-root -l plot_mu.C plot_ode.C
+root -l plot_mu.C plot_ode.C plot_dose.C
