@@ -286,22 +286,46 @@ int main ()
     double mu_const = std::exp(log_mu);
     double mu_en_const = std::exp(log_mu_en);
 
-    std::cout << "Simulazione fascio a " << E_beam << " MeV / mu = " << mu_const
-        << " / mu_en = " << mu_en_const << std::endl;
+    double E_beam_sc = 0.60;
+    double log_mu_sc = grid.interpolate<double, std::vector<double>>(
+        E_beam_sc, fj, []() -> double {return 0.;});
+    double log_mu_en_sc = grid.interpolate<double, std::vector<double>>(
+        E_beam_sc, fj_en, []() -> double {return 0.;});
+    double mu_const_sc = std::exp(log_mu_sc);
+    double mu_en_const_sc = std::exp(log_mu_en_sc);
+
+    double f_fwd = 0.80;
+    double mu_scatt_create = mu_const - mu_en_const;
+
+    std::cout << "Simulazione fascio. " << std::endl;
+    std::cout << "Parametri fisici: " << E_beam << " MeV / mu = " << mu_const
+        << " / mu_en = " << mu_en_const << " -> Parametri fascio primario" 
+        << std::endl;
+    std::cout << "Parametri fisici: " << E_beam_sc << " MeV / mu = " << mu_const_sc
+        << " / mu_en = " << mu_en_const_sc << " -> Parametri fascio scatterato" 
+        << std::endl;
 
     // 2. funzione rhs (right hand side)
     // solutore passa a un vettore state, ne leggiamo il valore e lo sovrasciviamo
     // col valore della derivata
-    rk::rk_rhs_t<rk::vd<1>> rhs = [mu_const](double z, rk::vd<1>& state) {
-        double current_phi = state(0); // leggiamo fluenza attuale
-        
-        state[0] = -mu_const * current_phi; // scriviamo la derivata
-                                            // dPhi/dz = - mu Phi
-    };
+    rk::vd<2> phi_init; // condizioni iniziali
+    phi_init[0] = 1.0;  // fluenza primaria 1
+    phi_init[1] = 0.0;  // fluenza scatterata 0 
 
+    rk::rk_rhs_t<rk::vd<2>> rhs = [mu_const, mu_const_sc, mu_scatt_create, f_fwd,
+        E_beam, E_beam_sc](double /*z*/, rk::vd<2>& state) {
+        double phi_p = state(0); 
+        double phi_s = state(1);
+
+        double dp_dz = - mu_const * phi_p;
+        double ds_dz = (mu_scatt_create * (E_beam / E_beam_sc) * f_fwd) 
+            * phi_p - mu_const_sc * phi_s; 
+        
+        state[0] = dp_dz;
+        state[1] = ds_dz;
+    };
+    
     // 3. condizioni iniziali
-    rk::vd<1> phi_initial;
-    phi_initial[0] = 1.0; // fluenza a z=0, sul bordo del fantoccio, 100%
     std::vector<double> z_points;
     for(int i=0; i <=50; i++) {
         z_points.push_back(i * 0.5); // passi di 0.5 cm
@@ -310,27 +334,50 @@ int main ()
     rk::TimeInfo spatial_info(z_points);
 
     // 4. inizializzazione solutore
-    rk::RungeKutta<rk::vd<1>, 4> solver(
+    rk::RungeKutta<rk::vd<2>, 4> solver(
+        rk::PreImplementedTableau::RKOriginal,  // tab butcher per RK4
+        phi_init,                               // condizione iniziale a z=0
+        spatial_info,                           // punti spaziali
+        rhs                                     // equazione
+    );
+   
+    rk::rk_rhs_t<rk::vd<1>> rhs0 = [mu_const](double /*z*/, rk::vd<1>& state) {
+        double current_phi = state(0);      // leggiamo fluenza attuale
+        
+        state[0] = -mu_const * current_phi; // scriviamo la derivata
+                                            // dPhi/dz = - mu Phi
+    };
+    
+    rk::vd<1> phi_initial;
+    phi_initial[0] = 1.0; // fluenza a z=0, sul bordo del fantoccio, 100%
+
+    rk::RungeKutta<rk::vd<1>, 4> solver0(
         rk::PreImplementedTableau::RKOriginal, // tab butcher per RK4
         phi_initial,                           // condizione iniziale a z=0
         spatial_info,                          // punti spaziali
-        rhs                                    // equazione
+        rhs0                                   // equazione
     );
 
     // 5. callback, esportiamo i dati passo passo mentre risolve
-    std::ofstream out_ode("fluenza_terma_z.dat");
+    std::ofstream out_ode0("fluenza_terma_z.dat");
+    std::ofstream out_ode("fluenza_prim_scat.dat");
+    
     std::vector<double> z_history;
     std::vector<double> terma_history;
     std::vector<double> kerma_history;
+    
+    std::vector<double> phi_p_history;
+    std::vector<double> phi_s_history;
+    std::vector<double> kerma_tot_history;
 
     double max_abs_err_ode = 0.0;
     double max_rel_err_ode = 0.0;
     double worst_z_abs = 0.0;
     double worst_z_rel = 0.0;
 
-    rk::rk_callback_t<rk::vd<1>> callback = [&](double z, const rk::TimeInfo&, 
-            const rk::vd<1>& phi) {
-        double fluenza_attuale = phi(0);
+    rk::rk_callback_t<rk::vd<1>> callback0 = [&](double z, const rk::TimeInfo&, 
+            const rk::vd<1>& phi0) {
+        double fluenza_attuale = phi0(0);
         double esatta = std::exp(-mu_const * z);
         double terma_attuale = mu_const * E_beam * fluenza_attuale;
         double kerma_attuale = mu_en_const * E_beam * fluenza_attuale;
@@ -346,22 +393,52 @@ int main ()
             max_rel_err_ode = rel_err;
             worst_z_rel = z;
         }
+    
         z_history.push_back(z);
         terma_history.push_back(terma_attuale);
         kerma_history.push_back(kerma_attuale);
 
-        out_ode << z << " " << fluenza_attuale << " " << esatta << " "  
+        out_ode0 << z << " " << fluenza_attuale << " " << esatta << " "  
             << terma_attuale << " " << kerma_attuale << "\n";
     };
+    solver0.AddCallback(callback0);
+    solver0.CallbackOnlyOnTimeStamp(); // stampa solo ai z_points definiti da noi
+
+    rk::rk_callback_t<rk::vd<2>> callback = [&](double z, const rk::TimeInfo&, 
+            const rk::vd<2>& phi) {
+        double phi_p = phi(0);
+        double phi_s = phi(1);
+
+        // KERMA locale depositato dai primari
+        double kerma_p = mu_en_const * E_beam * phi_p;
+
+        // KERMA locale depositato dagli scatterati (che viaggiano e poi assorbono)
+        double kerma_s = mu_en_const_sc * E_beam_sc * phi_s;
+
+        // Collision KERMA Totale
+        double kerma_tot = kerma_p + kerma_s;
+
+        //z_history.push_back(z);
+        phi_p_history.push_back(phi_p);
+        phi_s_history.push_back(phi_s);
+        kerma_tot_history.push_back(kerma_tot);
+
+        out_ode << z << " " << kerma_p << " " << kerma_s << " " << kerma_tot 
+            << " " << phi_p << " " << phi_s << "\n";
+    };
+
     solver.AddCallback(callback);
-    solver.CallbackOnlyOnTimeStamp(); // stampa solo ai z_points definiti da noi
+    solver.CallbackOnlyOnTimeStamp();
 
     // 6. risoluzione
     std::cout << "Avvio propagazione del fascio nel mezzo." << std::endl;
+    solver0();
+    out_ode0.close();
     solver();
     out_ode.close();
     std::cout << "Propagazione completata " << std::endl;
     std::cout << "Dati salvati fluenza_terma.dat" << std::endl;
+    std::cout << "Dati salvati fluenza_prim_scat.dat" << std::endl;
 
     std::cout << "Errore Assoluto Massimo: " << max_abs_err_ode << " (z = " <<
         worst_z_abs << " cm)" << std::endl;
@@ -413,36 +490,39 @@ int main ()
     out_dose_riemann.close();
 
     // 1. definizione kernel 
-    double c_p = 0.7; // 70% componente elettroni primari
-    double c_s = 0.3; // 30% componente scatter
+    double w_el = mu_en_const / mu_const;
+    double w_sc = 1.0 - w_el;
     
-    double a_p = 5.0; // elettroni primari, decadimento rapido
-    double A_p = c_p * (a_p / 2.0);
-    
-    double a_s_fwd = 0.3; // scatter forward lento
-    double a_s_bwd = 1.2; // veloce decadimento all'indietro
+    double a_fwd_el = 4.8;
+    double a_bwd_el = 8.0;
+    double A_el = 1.0 / ((1.0 / a_fwd_el) + (1.0 / a_bwd_el));
 
-    double A_s = c_s / ((1.0 / a_s_fwd) + (1.0 / a_s_bwd));
+    double a_s_fwd = 0.8;
+    double a_s_bwd = 1.2;
+    double A_sc = 1.0 / ((1.0 / a_s_fwd) + (1.0 / a_s_bwd));
 
-    auto kernel = [A_p, a_p, A_s, a_s_fwd, a_s_bwd](double distanza) {
-        double term_p = A_p * std::exp(-a_p * std::abs(distanza));
-        double term_s = 0.0;
-
+    auto kernel_terma = [w_el, w_sc, A_el, a_fwd_el, a_bwd_el, A_sc, a_s_fwd, 
+         a_s_bwd](double distanza) {
+        double term_el = 0.0;
         if (distanza >= 0) {
-            term_s = A_s * std::exp(-a_s_fwd * distanza);
+            term_el = (w_el * A_el) * std::exp(- a_fwd_el * distanza);
         } else {
-            term_s = A_s * std::exp(a_s_bwd * distanza);
+            term_el = (w_el * A_el) * std::exp(a_bwd_el * distanza);
         }
-        return term_p + term_s;
+
+        double term_sc = 0.0;
+        if (distanza >= 0) {
+            term_sc = (w_sc * A_sc) * std::exp(- a_s_fwd * distanza);
+        } else {
+            term_sc = (w_sc * A_sc) * std::exp(a_s_bwd * distanza);
+        }
+
+        return term_el + term_sc;
     };
 
-    double a_fwd = 2.0;
-    double a_bwd = 8.0;
-    double A = 1.0 / ((1.0 / a_fwd) + (1.0 / a_bwd));
-
-    auto kernel_elettroni = [A, a_fwd, a_bwd](double distanza) {
-        if (distanza >= 0.0) return A * std::exp(-a_fwd * distanza);
-        else                 return A * std::exp(a_bwd * distanza);
+    auto kernel_elettroni = [A_el, a_fwd_el, a_bwd_el](double distanza) {
+        if (distanza >= 0.0) return A_el * std::exp(-a_fwd_el * distanza);
+        else                 return A_el * std::exp(a_bwd_el * distanza);
     };
 
     // 2. definizione terma e kerma continuo - ponte spaziale (spezzata)
@@ -470,6 +550,18 @@ int main ()
         return k0 + (k1 - k0) * (z_req - z0) / (z1 - z0);
     };
 
+    auto kerma_tot_raw_linear = [&](double z_req) {
+        auto it = std::lower_bound(z_history.begin(), z_history.end(), z_req);
+        if (it == z_history.begin()) return kerma_tot_history.front();
+        if (it == z_history.end()) return kerma_tot_history.back();
+
+        int i = std::distance(z_history.begin(), it);
+        double z0 = z_history[i-1], z1 = z_history[i];
+        double k0 = kerma_tot_history[i-1], k1 = kerma_tot_history[i];
+
+        return k0 + (k1 - k0) * (z_req - z0) / (z1 - z0);
+    };
+
     // 3. definizione terma continuo - grid tassellazione chebishev
     std::vector<double> tasselli_z = {0.0, 5.0, 10.0, 15.0, 20.0, 25.0};
     std::vector<size_t> gradi_z = {15, 15, 15, 15, 15};
@@ -489,7 +581,13 @@ int main ()
         kerma_raw_linear,
         [](size_t n) {return std::vector<double>(n, 0.);}        
     );
-    
+ 
+    std::vector<double> fj_kerma_tot = Interpolation::Discretize<std::vector<double>, double>(
+        grid_terma,
+        kerma_tot_raw_linear,
+        [](size_t n) {return std::vector<double>(n, 0.);}        
+    );  
+
     // 4. definizione terma continuo - funzione finale liscia
     auto terma_continuo = [&](double z_req) {
         return grid_terma.interpolate<double, std::vector<double>>(
@@ -504,6 +602,13 @@ int main ()
         );
     };
     std::cout << "KERMA discretizzato spazialmente su Grid1D." << std::endl;
+
+    auto kerma_tot_continuo = [&](double z_req) {
+        return grid_terma.interpolate<double, std::vector<double>>(
+            z_req, fj_kerma_tot, []() -> double {return 0.;}        
+        );
+    };
+    std::cout << "KERMA TOT discretizzato spazialmente su Grid1D." << std::endl;
 
     // 5. integrale di gauss-kronrod
     std::ofstream out_dose("profilo_dose_gk.dat");
@@ -536,7 +641,7 @@ int main ()
         double dose_z_k = dose_fwd_k + dose_bwd_k;
 
         auto integranda_t = [&](double z_prime) {
-            return terma_continuo(z_prime) * kernel(z - z_prime);
+            return terma_continuo(z_prime) * kernel_terma(z - z_prime);
         };
 
         // contributo da monte
@@ -554,8 +659,29 @@ int main ()
 
         double dose_z_t = dose_fwd_t + dose_bwd_t;
 
+        // definisco integranda per lo specifico z
+        auto integranda_k_tot = [&](double z_prime) {
+            return kerma_tot_continuo(z_prime) * kernel_elettroni(z - z_prime);
+        };
+
+        // contributo da monte
+        double dose_fwd_k_tot = 0.0;
+
+        if (z > 0.0) {
+            dose_fwd_k_tot = Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integranda_k_tot, 0.0, z, toll_rel, toll_abs);
+        }
+
+        // contributo da valle
+        double dose_bwd_k_tot = 0.0;
+        if (z < z_max) {
+            dose_bwd_k_tot = Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integranda_k_tot, z, z_max, toll_rel, toll_abs);
+        }
+
+        double dose_z_k_tot = dose_fwd_k_tot + dose_bwd_k_tot;
+
         out_dose << z << " " << terma_continuo(z) << " " << kerma_continuo(z) << 
-           " " << dose_z_k << " " << dose_z_t << "\n";
+           " " << dose_z_t << " " << dose_z_k << " " << kerma_tot_continuo(z) <<
+           " " << dose_z_k_tot << "\n";
     }
     out_dose.close();
 
