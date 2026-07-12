@@ -406,28 +406,48 @@ int main ()
 
     std::cout << "\n" << std::endl;
 
-    // 1. energia e mu del test
+    // 1. calcolo di f_fwd e E_beam_sc da sez urto klein nishina, def parametri
+    
     double E_beam = 1.75;
-/*    double log_mu = grid.interpolate<double, std::vector<double>>(
-        E_beam, fj, []() -> double {return 0.;});
-    double log_mu_en = grid.interpolate<double, std::vector<double>>(
-        E_beam, fj_en, []() -> double {return 0.;});
-    double mu_const = std::exp(log_mu);
-    double mu_en_const = std::exp(log_mu_en);*/
     double mu_const = mu_continuo(E_beam);
     double mu_en_const = mu_en_continuo(E_beam);
 
-    double E_beam_sc = 0.60;
-/*    double log_mu_sc = grid.interpolate<double, std::vector<double>>(
-        E_beam_sc, fj, []() -> double {return 0.;});
-    double log_mu_en_sc = grid.interpolate<double, std::vector<double>>(
-        E_beam_sc, fj_en, []() -> double {return 0.;});
-    double mu_const_sc = std::exp(log_mu_sc);
-    double mu_en_const_sc = std::exp(log_mu_en_sc);*/
+    double m_e_c2 = 0.511; // MeV
+    double alpha = E_beam / m_e_c2;
+
+    auto E_prime = [&](double theta) {
+        return E_beam / (1.0 + alpha * (1.0 - std::cos(theta)));
+    };
+
+    auto dsigma_dOmega = [&](double theta) {
+        double Ep = E_prime(theta);
+        double r = Ep / E_beam;
+        double sin2 = std::sin(theta) * std::sin(theta);
+        return r*r * (r + 1.0 / r - sin2);
+    };
+
+    auto integranda_energia = [&](double theta) {
+        return E_prime(theta) * dsigma_dOmega(theta) * std::sin(theta);
+    };
+
+    auto integranda_norm = [&](double theta) {
+        return dsigma_dOmega(theta) * std::sin(theta);
+    };
+
+    double tol = 1e-8;
+    double num_E   = Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(
+            integranda_energia, 0.0, M_PI, tol, tol);
+    double den_E   = Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(
+            integranda_norm,    0.0, M_PI, tol, tol);
+    double num_fwd = Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(
+            integranda_energia, 0.0, M_PI/2.0, tol, tol);
+    
+    double E_beam_sc = num_E / den_E;
+    double f_fwd = num_fwd / num_E;
+
     double mu_const_sc = mu_continuo(E_beam_sc);
     double mu_en_const_sc = mu_en_continuo(E_beam_sc);
 
-    double f_fwd = 0.80;
     double mu_scatt_create = mu_const - mu_en_const;
 
     std::cout << "Simulazione fascio. " << std::endl;
