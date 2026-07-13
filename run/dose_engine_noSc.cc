@@ -393,8 +393,9 @@ int main ()
         double phi_s = state(1);
 
         double dp_dz = - mu_const * phi_p;
-        double ds_dz = (mu_scatt_create * (E_beam / E_beam_sc) * f_fwd) 
+        double ds_dz = 0.0 * (mu_scatt_create * (E_beam / E_beam_sc) * f_fwd) 
             * phi_p - mu_const_sc * phi_s; 
+        // annulliamo per verifica il termine di scattering
         
         state[0] = dp_dz;
         state[1] = ds_dz;
@@ -424,8 +425,8 @@ int main ()
     );
 
     // 5. callback, esportiamo i dati passo passo mentre risolve
-    std::ofstream out_ode0("fluenza_terma_z.dat");
-    std::ofstream out_ode("fluenza_prim_scat.dat");
+    std::ofstream out_ode0("fluenza_terma_z_noSc.dat");
+    std::ofstream out_ode("fluenza_prim_scat_noSc.dat");
     
     std::vector<double> z_history;
     std::vector<double> terma_history;
@@ -495,14 +496,14 @@ int main ()
     solver.CallbackOnlyOnTimeStamp();
 
     // 6. risoluzione
-    std::cout << "Avvio propagazione del fascio nel mezzo." << std::endl;
+    std::cout << "Avvio propagazione del fascio nel mezzo, senza scattering." << std::endl;
     solver0();
     out_ode0.close();
     solver();
     out_ode.close();
     std::cout << "Propagazione completata " << std::endl;
-    std::cout << "Dati salvati fluenza_terma.dat" << std::endl;
-    std::cout << "Dati salvati fluenza_prim_scat.dat" << std::endl;
+    std::cout << "Dati salvati fluenza_terma_noSc.dat" << std::endl;
+    std::cout << "Dati salvati fluenza_prim_scat_noSc.dat" << std::endl;
 
     std::cout << "Errore Assoluto Massimo: " << max_abs_err_ode << " (z = " <<
         worst_z_abs << " cm)" << std::endl;
@@ -758,10 +759,10 @@ int main ()
     double z_max = z_history.back(); 
  
     // primo approccio base, per verificare correttezza calcolo
-    std::ofstream out_dose_riemann("profilo_dose.dat");
+    std::ofstream out_dose_riemann("profilo_dose_noSc.dat");
     std::vector<double> dose_history_riemann;
 
-    std::cout << "Calcolo dose con Somma di Riemann." << std::endl;
+    std::cout << "Calcolo dose con Somma di Riemann, senza scattering." << std::endl;
 
     std::vector<double> z_riemann_check, dose_riemann_check;
     for (double z = 0.0; z <= 15.0; z += 0.1) {
@@ -779,9 +780,9 @@ int main ()
     }
     out_dose_riemann.close();
 
-    std::cout << "Calcolo dose con quadratura Gauss-Kronrod." << std::endl;
+    std::cout << "Calcolo dose con quadratura Gauss-Kronrod, senza scattering." << std::endl;
     
-    std::ofstream out_dose("profilo_dose_gk.dat");
+    std::ofstream out_dose("profilo_dose_gk_noSc.dat");
     std::vector<double> z_check, dose_k_check, dose_t_check, dose_kt_check, dose_t_tot_check, dose_kt_en_check;
     
     for (double z=0.0; z<=15.0; z+=0.1) { // integro su 15 cm ignorando 
@@ -888,7 +889,7 @@ int main ()
     out_dose.close();
 
     std::cout << "Calcolo dose completato." << std::endl;
-    std::cout << "Dati salvati in profilo_dose.dat e profilo_dose_gk.dat" 
+    std::cout << "Dati salvati in profilo_dose_noSc.dat e profilo_dose_gk_noSc.dat" 
         << std::endl; 
 
     std::cout << "\n" << std::endl;

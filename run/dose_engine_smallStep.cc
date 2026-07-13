@@ -224,6 +224,7 @@ int main ()
     for(int i=0; i<n_test; i++) {
         double E = E_min * std::exp(i * std::log(E_max / E_min) / (n_test - 1));
 
+
         double exact = mu_raw_loglog(E);
         double log_interp = grid.interpolate<double, std::vector<double>>(
             E, fj, []() -> double {return 0.;}
@@ -402,8 +403,8 @@ int main ()
     
     // 3. specificazione problema
     std::vector<double> z_points;
-    for(int i=0; i <=50; i++) {
-        z_points.push_back(i * 0.5); // passi di 0.5 cm
+    for(int i=0; i <=100; i++) {
+        z_points.push_back(i * 0.25); // passi di 0.5 cm
     }
     // TimeInfo gestisce la griglia, chiamato time ma per noi è spazio
     rk::TimeInfo spatial_info(z_points);
@@ -424,8 +425,8 @@ int main ()
     );
 
     // 5. callback, esportiamo i dati passo passo mentre risolve
-    std::ofstream out_ode0("fluenza_terma_z.dat");
-    std::ofstream out_ode("fluenza_prim_scat.dat");
+    std::ofstream out_ode0("fluenza_terma_z_small.dat");
+    std::ofstream out_ode("fluenza_prim_scat_small.dat");
     
     std::vector<double> z_history;
     std::vector<double> terma_history;
@@ -500,9 +501,9 @@ int main ()
     out_ode0.close();
     solver();
     out_ode.close();
-    std::cout << "Propagazione completata " << std::endl;
-    std::cout << "Dati salvati fluenza_terma.dat" << std::endl;
-    std::cout << "Dati salvati fluenza_prim_scat.dat" << std::endl;
+    std::cout << "Propagazione completata con small step" << std::endl;
+    std::cout << "Dati salvati fluenza_terma_small.dat" << std::endl;
+    std::cout << "Dati salvati fluenza_prim_scat_small.dat" << std::endl;
 
     std::cout << "Errore Assoluto Massimo: " << max_abs_err_ode << " (z = " <<
         worst_z_abs << " cm)" << std::endl;
@@ -758,15 +759,15 @@ int main ()
     double z_max = z_history.back(); 
  
     // primo approccio base, per verificare correttezza calcolo
-    std::ofstream out_dose_riemann("profilo_dose.dat");
+    std::ofstream out_dose_riemann("profilo_dose_small.dat");
     std::vector<double> dose_history_riemann;
 
-    std::cout << "Calcolo dose con Somma di Riemann." << std::endl;
+    std::cout << "Calcolo dose con Somma di Riemann, small step." << std::endl;
 
     std::vector<double> z_riemann_check, dose_riemann_check;
     for (double z = 0.0; z <= 15.0; z += 0.1) {
        double dose_z = 0.0;
-       double dz_fine = 0.02;
+       double dz_fine = 0.01;
 
         // somma di riemann, integro su tutti gli z'
         for (double z_prime = 0.0; z_prime <= z_max; z_prime += dz_fine) {
@@ -779,9 +780,9 @@ int main ()
     }
     out_dose_riemann.close();
 
-    std::cout << "Calcolo dose con quadratura Gauss-Kronrod." << std::endl;
+    std::cout << "Calcolo dose con quadratura Gauss-Kronrod, small step." << std::endl;
     
-    std::ofstream out_dose("profilo_dose_gk.dat");
+    std::ofstream out_dose("profilo_dose_gk_small.dat");
     std::vector<double> z_check, dose_k_check, dose_t_check, dose_kt_check, dose_t_tot_check, dose_kt_en_check;
     
     for (double z=0.0; z<=15.0; z+=0.1) { // integro su 15 cm ignorando 
@@ -888,7 +889,7 @@ int main ()
     out_dose.close();
 
     std::cout << "Calcolo dose completato." << std::endl;
-    std::cout << "Dati salvati in profilo_dose.dat e profilo_dose_gk.dat" 
+    std::cout << "Dati salvati in profilo_dose_small.dat e profilo_dose_gk_small.dat" 
         << std::endl; 
 
     std::cout << "\n" << std::endl;

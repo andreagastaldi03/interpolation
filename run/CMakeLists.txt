@@ -3,6 +3,8 @@ set(FILE_PATH "${CMAKE_CURRENT_SOURCE_DIR}")
 
 set(RUN_SOURCES  
    dose_engine.cc
+   dose_engine_smallStep.cc
+   dose_engine_noSc.cc
 )
 
 foreach(runsource ${RUN_SOURCES})
