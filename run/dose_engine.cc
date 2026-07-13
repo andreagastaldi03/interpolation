@@ -605,56 +605,12 @@ int main ()
     
     std::cout << "\n" << std::endl;
 
-    // 1. definizione del kernel 
-    // a = controlla la pendenza / A fattore di normalizzazione
-/*    double a_pr = 2.0; // elettroni primari, decadimento rapido
-    double A_pr = a_pr / 2.0;
-
-    // funzione kernel semplificata
-    auto dose_kernel = [A_pr, a_pr](double distanza) {
-        return A_pr * std::exp(-a_pr * std::abs(distanza));
-    };
-
-    double w_el = mu_en_const / mu_const;
-    double w_sc = 1.0 - w_el;
-    
-    double a_fwd_el = 4.8;
-    double a_bwd_el = 8.0;
-    double A_el = 1.0 / ((1.0 / a_fwd_el) + (1.0 / a_bwd_el));
-
-    double a_s_fwd = 0.8;
-    double a_s_bwd = 1.2;
-    double A_sc = 1.0 / ((1.0 / a_s_fwd) + (1.0 / a_s_bwd));
-
-    auto kernel_terma = [w_el, w_sc, A_el, a_fwd_el, a_bwd_el, A_sc, a_s_fwd, 
-         a_s_bwd](double distanza) {
-        double term_el = 0.0;
-        if (distanza >= 0) {
-            term_el = (w_el * A_el) * std::exp(- a_fwd_el * distanza);
-        } else {
-            term_el = (w_el * A_el) * std::exp(a_bwd_el * distanza);
-        }
-
-        double term_sc = 0.0;
-        if (distanza >= 0) {
-            term_sc = (w_sc * A_sc) * std::exp(- a_s_fwd * distanza);
-        } else {
-            term_sc = (w_sc * A_sc) * std::exp(a_s_bwd * distanza);
-        }
-
-        return term_el + term_sc;
-    };
-
-    auto kernel_elettroni = [A_el, a_fwd_el, a_bwd_el](double distanza) {
-        if (distanza >= 0.0) return A_el * std::exp(-a_fwd_el * distanza);
-        else                 return A_el * std::exp(a_bwd_el * distanza);
-    };
-*/
-    double k_fwd_el = 2.5; // TODO calibrare
+    // 1. definizione del kernel
+    double k_fwd_el = 3.0; 
     double k_bwd_el = 4.0; // TODO calibrare
 
-    double k_s_fwd = 1.0; // TODO calibrare
-    double k_s_bwd = 1.8; // TODO calibrare
+    double k_s_fwd = 0.7; 
+    double k_s_bwd = 2.9; 
 
     double R_csda_primari = Rcsda_raw_loglog(E_beam);
     double R_csda_scatter = Rcsda_raw_loglog(E_beam_sc);
@@ -687,9 +643,17 @@ int main ()
 
     // kernel scatter fotonico per TERMA, basato sul libero cammino medio 1/mu
     double lambda_sc = 1.0 / mu_const_sc;
+    //double g_stretch = 1.5;
+    //double p_mix = 0.9;
+    //double lambda_sc2 = g_stretch * lambda_sc;
+
     double a_s_fwd = k_s_fwd / lambda_sc;
     double a_s_bwd = k_s_bwd / lambda_sc;
     double A_sc = 1.0 / ((1.0 / a_s_fwd) + (1.0 / a_s_bwd));
+
+    //double a_s_fwd2 = k_s_fwd / lambda_sc2;
+    //double a_s_bwd2 = k_s_bwd / lambda_sc2;
+    //double A_sc2 = 1.0 / ((1.0 / a_s_fwd2) + (1.0 / a_s_bwd2));
 
     // pesi energetici
     double w_el = mu_en_const / mu_const;
@@ -703,6 +667,38 @@ int main ()
         else                 term_sc = (w_sc * A_sc) * std::exp(a_s_bwd * distanza);
         return term_el + term_sc;
     };
+
+/*    auto kernel_terma_fisico = [=](double distanza) {
+        double term_el = w_el * kernel_el_primari(distanza);
+        double term_sc = 0.0;
+        double term_sc2 = 0.0;
+        if (distanza >= 0.0) {
+            term_sc = (w_sc * A_sc) * std::exp(-a_s_fwd * distanza);
+            term_sc2 = (w_sc * A_sc2) * std::exp(-a_s_fwd2 * distanza);
+        } else {
+            term_sc = (w_sc * A_sc) * std::exp(a_s_bwd * distanza);
+            term_sc2 = (w_sc * A_sc2) * std::exp(-a_s_bwd2 * distanza);
+        }
+        return term_el + (p_mix * term_sc + (1 - p_mix) * term_sc2);
+    };
+*/
+    double k_s2_fwd = 2.8;
+    double k_s2_bwd = 4.8;
+
+    auto build_kernel_terma_scatter_gen2 = [&]() {
+        double w_el_s = mu_en_const_sc / mu_const_sc;
+        double w_sc_s = 1.0 - w_el_s;
+        double lambda_s2 = 1.0 / mu_const_sc; // stessa scala della propagazione phi_s
+        double a_s2_fwd = k_s2_fwd / lambda_s2, a_s2_bwd = k_s2_bwd / lambda_s2;
+        double A_s2 = 1.0 / (1.0/a_s2_fwd + 1.0/a_s2_bwd);
+
+        return [=](double d) {
+            double el = w_el_s * kernel_el_scatter(d); 
+            double sc = (d>=0.0) ? (w_sc_s*A_s2)*std::exp(-a_s2_fwd*d) : (w_sc_s*A_s2)*std::exp(a_s2_bwd*d);
+            return el + sc;
+        };
+    };
+    auto kernel_terma_gen2 = build_kernel_terma_scatter_gen2();
 
    // 2. definizione terma e kerma continuo - ponte spaziale (spezzata)
     auto terma_raw_linear = [&](double z_req) {
@@ -881,7 +877,7 @@ int main ()
 
     std::cout << "Calcolo dose con quadratura Gauss-Kronrod." << std::endl;
 
-    std::vector<double> z_check, dose_k_check, dose_t_check, dose_kt_check;
+    std::vector<double> z_check, dose_k_check, dose_t_check, dose_kt_check, dose_t_tot_check;
     
     for (double z=0.0; z<=15.0; z+=0.1) { // integro su 15 cm ignorando padding 
                                           // finale
@@ -914,6 +910,28 @@ int main ()
             : 0.0;
         double dose_z_t = dose_fwd_t + dose_bwd_t;
 
+        auto integranda_terma = [&](double z_prime) {
+            double kerma_p_prime = mu_en_const * E_beam * phi_p_continuo(z_prime);
+            // solo elettroni, niente w_sc qui
+            double terma_s_prime = mu_const_sc * E_beam_sc * phi_s_continuo(z_prime); 
+            // TERMA (mu totale) dello scatter
+
+            return kerma_p_prime * kernel_el_primari(z - z_prime)        
+            // identico al termine primario di K_tot
+                   + terma_s_prime * kernel_terma_gen2(z - z_prime);        
+            // qui, e SOLO qui, va la componente w_sc
+        };
+        
+        double dose_fwd_terma = (z > 0.0)
+            ? Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(
+                    integranda_terma, 0.0, z, toll_rel, toll_abs)
+            : 0.0;
+        double dose_bwd_terma = (z < z_max)
+            ? Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(
+                    integranda_terma, z, z_max, toll_rel, toll_abs)
+            : 0.0;
+        double dose_z_terma = dose_fwd_terma + dose_bwd_terma;
+
         auto integranda_kt = [&](double z_prime) {
             return kerma_p_continuo(z_prime) * kernel_el_primari(z - z_prime)
                 + kerma_s_continuo(z_prime) * kernel_el_scatter(z - z_prime);
@@ -933,10 +951,12 @@ int main ()
         dose_k_check.push_back(dose_z_k);
         dose_t_check.push_back(dose_z_t);
         dose_kt_check.push_back(dose_z_kt);
+        dose_t_tot_check.push_back(dose_z_terma);
 
         out_dose << z << " " << terma_continuo(z) << " " << kerma_continuo(z) << 
            " " << dose_z_t << " " << dose_z_k << " " << 
-           (kerma_p_continuo(z) + kerma_s_continuo(z)) << " " << dose_z_kt << "\n";
+           (kerma_p_continuo(z) + kerma_s_continuo(z)) << " " << dose_z_kt << 
+           " " << dose_z_terma << "\n";
     }
     out_dose.close();
 
@@ -977,10 +997,122 @@ int main ()
         << integra_trapezi(z_riemann_check, dose_riemann_check) << std::endl;
     std::cout << "GK K_col (K_col primari, kernel elettronico): "
         << integra_trapezi(z_check, dose_k_check) << std::endl;
-    std::cout << "GK TERMA (TERMA, kernel elettr.+scatter):     "
+    std::cout << "GK TERMA (TERMA, w_sc su primario): "
         << integra_trapezi(z_check, dose_t_check) << std::endl;
+    std::cout << "GK TERMA (TERMA, phi_p e phi_s separati): "
+        << integra_trapezi(z_check, dose_t_tot_check) << std::endl;
     std::cout << "GK K_tot (K_col p.+s., kernel separati):      "
         << integra_trapezi(z_check, dose_kt_check) << std::endl;
-   
+
+////////////////////////////////////////////////////////////////////////////////////
+/// FIT SU VALORI PARAMETRI LIBERI
+////////////////////////////////////////////////////////////////////////////////////
+ 
+    auto build_kernel_terma = [&](double ksf, double ksb) {
+        double a_sf = ksf / lambda_sc, a_sb = ksb / lambda_sc;
+        double A_sc_loc = 1.0 / ((1.0 / a_sf) + (1.0 / a_sb));
+        return [=](double d) {
+            double el = w_el * kernel_el_primari(d);
+            double sc = (d >= 0.0) ? (w_sc * A_sc_loc) * std::exp(-a_sf * d)
+                                   : (w_sc * A_sc_loc) * std::exp( a_sb * d);
+            return el + sc;
+        };
+    };
+
+    auto costo_forma = [&](double ksf, double ksb) {
+        auto ker = build_kernel_terma(ksf, ksb);
+        double s2 = 0.0;
+        for (size_t i=0.0; i < z_check.size(); i++) {
+            double z = z_check[i];
+            auto integ = [&](double zp) {return terma_continuo(zp) * ker(z-zp);};
+            double d_fwd = (z>0.0) ? Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integ,0.0,z,1e-4,1e-6) : 0.0;
+            double d_bwd = (z<z_max) ? Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integ,z,z_max,1e-4,1e-6) : 0.0;
+            double scarto = (d_fwd + d_bwd) - dose_kt_check[i];
+            s2 += scarto * scarto; 
+        }
+        return s2;
+    };
+
+    // grid search grezza
+    double best_ksf = k_s_fwd, best_ksb = k_s_bwd, best_c = 1e18;
+    for (double ksf = 0.1; ksf <= 2.0; ksf += 0.1)
+        for (double ksb = 0.1; ksb <= 3.0; ksb += 0.1) {
+            double c = costo_forma(ksf, ksb);
+            if (c < best_c) {best_c = c; best_ksf = ksf; best_ksb = ksb;} 
+        }
+
+    std::cout << "k_s_fwd ottimale: " << best_ksf << ", k_s_bwd ottimale: " <<
+        best_ksb << std::endl;
+
+    auto build_kernel_terma_gen2 = [&](double ks2f, double ks2b) {
+        double w_el_s = mu_en_const_sc / mu_const_sc;
+        double w_sc_s = 1.0 - w_el_s;
+        double lambda_s2 = 1.0 / mu_const_sc;
+        double a2f = ks2f / lambda_s2, a2b = ks2b / lambda_s2;
+        double A2 = 1.0 / (1.0/a2f + 1.0/a2b);
+        return [=](double d) {
+            double el = w_el_s * kernel_el_scatter(d);
+            double sc = (d>=0.0) ? (w_sc_s*A2)*std::exp(-a2f*d) 
+                                 : (w_sc_s*A2)*std::exp(a2b*d);
+            return el + sc;
+        };
+    };
+
+    double integrale_dose_kt = integra_trapezi(z_check, dose_kt_check);
+
+    auto costo_forma_v3 = [&](double ks2f, double ks2b) {
+        auto ker2 = build_kernel_terma_gen2(ks2f, ks2b);
+        std::vector<double> dose_v3(z_check.size());
+        for (size_t i = 0; i < z_check.size(); i++) {
+            double z = z_check[i];
+            auto integ = [&](double zp) {
+                double kerma_p_prime = mu_en_const * E_beam * phi_p_continuo(zp);
+                double terma_s_prime = mu_const_sc * E_beam_sc * phi_s_continuo(zp);
+                return kerma_p_prime * kernel_el_primari(z - zp) 
+                    + terma_s_prime * ker2(z - zp);
+            };
+            double fwd = (z>0.0)   ? Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integ,0.0,z,1e-4,1e-6) : 0.0;
+            double bwd = (z<z_max) ? Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integ,z,z_max,1e-4,1e-6) : 0.0;
+        dose_v3[i] = fwd + bwd;
+        }
+        double int_v3 = integra_trapezi(z_check, dose_v3);
+        double s2 = 0.0;
+        for (size_t i = 0; i < z_check.size(); i++) {
+            double forma_v3 = dose_v3[i] / int_v3;
+            double forma_kt = dose_kt_check[i] / integrale_dose_kt;
+            double scarto = forma_v3 - forma_kt;
+            s2 += scarto * scarto;
+        }
+        return s2;
+    };
+
+    double best_ks2f = 1.0, best_ks2b = 1.0, best_c3 = 1e18;
+    for (double ks2f = 0.2; ks2f <= 3.0; ks2f += 0.2)
+        for (double ks2b = 0.2; ks2b <= 5.0; ks2b += 0.2) {
+            double c = costo_forma_v3(ks2f, ks2b);
+            if (c < best_c3) { best_c3 = c; best_ks2f = ks2f; best_ks2b = ks2b; }
+    }
+    std::cout << "k_s2_fwd (TERMA v3) ottimale: " << best_ks2f
+        << ", k_s2_bwd (TERMA v3) ottimale: " << best_ks2b << std::endl;
+
+    double me_c2 = 0.511; // MeV
+    double alpha_edge = E_beam / me_c2;
+    double E_max_electron = E_beam * (2.0*alpha_edge) / (1.0 + 2.0*alpha_edge); 
+    // edge Compton, θ=π
+
+    double R_max_electron = Rcsda_raw_loglog(E_max_electron);
+
+    // criterio pratico: la coda in avanti del kernel deve annullarsi (≈95-99%
+    // dell'energia gia' depositata) proprio a questa profondita'
+    double soglia = 0.95; // puoi alzarla a 0.99 se vuoi "annullarsi" 
+    double k_fwd_el_calibrato = -std::log(1.0 - soglia); 
+    // ≈3.0 per il 95%, ≈4.6 per il 99%
+
+    double a_fwd_calibrato = k_fwd_el_calibrato / R_max_electron;
+
+    std::cout << "Edge Compton: " << E_max_electron << " MeV, R_csda: " 
+        << R_max_electron << " cm -> k_fwd_el calibrato: " 
+        << k_fwd_el_calibrato << std::endl;
+
     return 0;
 }
