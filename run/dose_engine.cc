@@ -979,6 +979,21 @@ int main ()
     std::cout << "Energia di terza generazione non contabilizzata: "
         << integrale_terza_gen << std::endl;
 
+    // confronto tra risultati integrale con funzione integra_trapezi e con metodo gk
+    // per giustificare uso di integra trapezi
+    auto Dose_kcol_z = [&](double z) {
+        auto integ = [&](double zp) {return kerma_continuo(zp) * kernel_el_primari(z - zp);};
+        double fwd = (z > 0.0)    ? Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integ, 0.0, z, 1e-6, 1e-9) : 0.0;
+        double bwd = (z < z_max)  ? Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integ, z, z_max, 1e-6, 1e-9) : 0.0;
+        return fwd + bwd;
+    };
+
+    double integrale_outer_GK = Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(Dose_kcol_z, 0.0, 15.0, 1e-5, 1e-8);
+
+    std::cout << "GK annidata (outer+inner): " << integrale_outer_GK << std::endl;
+    std::cout << "Trapezi su griglia 0.1cm:  " << integra_trapezi(z_check, dose_k_check) 
+        << std::endl;
+
 ////////////////////////////////////////////////////////////////////////////////////
 /// FIT SU VALORI PARAMETRI LIBERI
 ////////////////////////////////////////////////////////////////////////////////////
