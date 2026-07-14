@@ -510,6 +510,8 @@ int main ()
     std::cout << "Errore Relativo Massimo: " << max_rel_err_ode * 100.0 << " % (z = " 
         << worst_z_rel << " cm)" << std::endl;
 
+
+
 ////////////////////////////////////////////////////////////////////////////////////
 /// INIZIO CALCOLO DOSE
 ////////////////////////////////////////////////////////////////////////////////////
@@ -904,10 +906,16 @@ int main ()
     };
 
     std::vector<double> kcol_tot_check;
-    for (double z : z_check) {
+    for (double z : z_check) { // z_check va solo fino a 15 cm
         kcol_tot_check.push_back(kerma_p_continuo(z)+kerma_s_continuo(z));
     }
-    std::cout << "Riferimento, K_col totale (primari+scatter): "
+
+    std::vector<double> z_check_full;
+    for (double z = 0.0; z <= z_max; z += 0.1) {   // z_max = 25, non 15
+        z_check_full.push_back(z);
+    }
+
+   std::cout << "Riferimento, K_col totale (primari+scatter; dominio 0-15): "
         << integra_trapezi(z_check, kcol_tot_check) << std::endl;
     std::cout << "Riemann (K_col primari, kernel elettronico): "
         << integra_trapezi(z_riemann_check, dose_riemann_check) << std::endl;
@@ -922,7 +930,7 @@ int main ()
     std::cout << "GK K_tot (K_col p.+s., kernel separati, perdita 2 gen): "
         << integra_trapezi(z_check, dose_kt_en_check) << std::endl;
 
-    std::vector<double> z_check_full, dose_kt_check_full, dose_terma_v3_check_full;
+    std::vector<double> dose_kt_check_full, dose_terma_check_full;
     for (double z = 0.0; z <= z_max; z += 0.1) {
     // stessa logica di calcolo di dose_z_kt e dose_z_terma, ma su dominio esteso
         auto integranda_terma = [&](double z_prime) {
@@ -955,16 +963,14 @@ int main ()
                     integranda_kt, z, z_max, toll_rel, toll_abs)
             : 0.0;
         double dose_z_kt = dose_fwd_kt + dose_bwd_kt;
-
-        z_check_full.push_back(z);
+ 
         dose_kt_check_full.push_back(dose_z_kt);
-        dose_terma_v3_check_full.push_back(dose_z_terma);
+        dose_terma_check_full.push_back(dose_z_terma);
     }
     std::cout << "GK K_tot (dominio esteso): " 
         << integra_trapezi(z_check_full, dose_kt_check_full) << std::endl;
     std::cout << "GK TERMA (dominio esteso): " 
-        << integra_trapezi(z_check_full, dose_terma_v3_check_full) << std::endl;
-
+        << integra_trapezi(z_check_full, dose_terma_check_full) << std::endl;
 
 
     // energia "di terza generazione" mai contabilizzata dal modello a 2 stati
@@ -979,6 +985,35 @@ int main ()
     }
     std::cout << "Energia di terza generazione non contabilizzata: "
         << integrale_terza_gen << std::endl;
+
+    // controllo sul risultato delle due ode, devono coincidere in assenza di scatter
+    std::ofstream check_kerma("check_kerma.dat");
+    for (double z = 0.0; z <= 15.0; z += 0.5) {
+        check_kerma << z << " " << kerma_p_continuo(z) + kerma_s_continuo(z) 
+            << " " << kerma_continuo(z) << " " 
+            << (kerma_p_continuo(z) + kerma_s_continuo(z) - kerma_continuo(z)) << "\n";
+    }
+    check_kerma.close();
+
+    std::cout << "Controllo compatibilità dose - kerma nel dominio completo." << std::endl;
+    std::vector<double> kcol_tot_check_full;
+    for (double z = 0.0; z <= z_max; z += 0.1) {   // z_max = 25, non 15
+        kcol_tot_check_full.push_back(kerma_p_continuo(z) + kerma_s_continuo(z));
+    }
+    std::cout << "Riferimento K_col (dominio completo 0-25): "
+        << integra_trapezi(z_check_full, kcol_tot_check_full) << std::endl;
+
+    std::vector<double> dose_k_check_full;
+    for (double z : z_check_full) {
+        auto integranda_k = [&](double z_prime) {
+            return kerma_continuo(z_prime) * kernel_el_primari(z - z_prime);
+        };
+        double d_fwd = (z>0.0)   ? Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integranda_k, 0.0, z, toll_rel, toll_abs) : 0.0;
+        double d_bwd = (z<z_max) ? Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integranda_k, z, z_max, toll_rel, toll_abs) : 0.0;
+        dose_k_check_full.push_back(d_fwd + d_bwd);
+    }
+    std::cout << "Dose K_col (dominio completo 0-25): "
+        << integra_trapezi(z_check_full, dose_k_check_full) << std::endl;
 
 ////////////////////////////////////////////////////////////////////////////////////
 /// FIT SU VALORI PARAMETRI LIBERI
