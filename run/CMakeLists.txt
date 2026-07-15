@@ -5,6 +5,7 @@ set(RUN_SOURCES
    dose_engine.cc
    dose_engine_smallStep.cc
    dose_engine_noSc.cc
+   dose_engine_scan.cc
 )
 
 foreach(runsource ${RUN_SOURCES})

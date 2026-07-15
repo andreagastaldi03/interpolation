@@ -785,7 +785,7 @@ int main ()
     std::ofstream out_dose("profilo_dose_gk_small.dat");
     std::vector<double> z_check, dose_k_check, dose_t_check, dose_kt_check, dose_t_tot_check, dose_kt_en_check;
     
-    for (double z=0.0; z<=15.0; z+=0.05) { // integro su 15 cm ignorando 
+    for (double z=0.0; z<=15.0; z+=0.1) { // integro su 15 cm ignorando 
                                           // comportamenti anomali a fine dominio
         // definisco integranda per lo specifico z
         // Dose per Kerma calcolato da singola eq diff
@@ -982,15 +982,15 @@ int main ()
 
     auto Dose_kcol_z = [&](double z) {
         auto integ = [&](double zp) { return kerma_continuo(zp) * kernel_el_primari(z - zp); };
-        double fwd = (z > 0.0)    ? Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integ, 0.0, z, 1e-6, 1e-9) : 0.0;
-        double bwd = (z < z_max)  ? Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integ, z, z_max, 1e-6, 1e-9) : 0.0;
+        double fwd = (z > 0.0)    ? Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integ, 0.0, z, 1e-5, 1e-8) : 0.0;
+        double bwd = (z < z_max)  ? Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(integ, z, z_max, 1e-5, 1e-8) : 0.0;
         return fwd + bwd;
     };
 
     double integrale_outer_GK = Interpolation::GaussKronrod<Interpolation::GK_61>::integrate(Dose_kcol_z, 0.0, 15.0, 1e-5, 1e-8);
 
     std::cout << "GK annidata (outer+inner): " << integrale_outer_GK << std::endl;
-    std::cout << "Trapezi su griglia 0.05cm:  " << integra_trapezi(z_check, dose_k_check) 
+    std::cout << "Trapezi su griglia 0.1cm:  " << integra_trapezi(z_check, dose_k_check) 
         << std::endl;
 
 ////////////////////////////////////////////////////////////////////////////////////
@@ -1115,12 +1115,6 @@ int main ()
     std::cout << "Calibrazione Kernel Elettronico (CSDA):" << std::endl;
     std::cout << " - k_fwd: " << k_fwd_el_calibrato << " cm^-1" << std::endl;
     std::cout << " - k_bwd: " << k_bwd_el_calibrato << " cm^-1" << std::endl;
-
-//////////////////////////////////////////////////
-/// TEST DI COERENZA
-//////////////////////////////////////////////////
-
-
 
     return 0;
 }
