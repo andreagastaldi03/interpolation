@@ -517,8 +517,37 @@ int main ()
     std::cout << "\n" << std::endl;
 
     // 1. definizione del kernel di convoluzione 
-    double k_fwd_el = 4.46; 
-    double k_bwd_el = 15.60; 
+
+    // fit su costante kernel propagazione forward dose elettronica usando come riferimento
+    // distanza deposizione dose elettrone in acqua (valori)
+    double me_c2 = 0.511; // MeV
+    double alpha_edge = E_beam / me_c2;
+    double E_max_electron = E_beam * (2.0*alpha_edge) / (1.0 + 2.0*alpha_edge); 
+    // edge Compton, θ=π
+
+    double R_max_electron = Rcsda_raw_loglog(E_max_electron);
+
+    // criterio pratico: la coda in avanti del kernel deve annullarsi (≈95-99%
+    // dell'energia gia' depositata) proprio a questa profondita'
+    // elettroni si assorbono dopo range, integrale del flusso (exp neg) tra 0 e
+    // il range deve essere circa 0 (\sim 1%) -> svolgendo il calcolo si ottiene exp 
+    // che decade dopo dist = range con parametro calibrato
+    // questo è solo il coefficiente, viene diviso dal range dentro il kernel
+    double soglia = 0.96;  
+    double k_fwd_el_calibrato = -std::log(1.0 - soglia); 
+
+    // Derivazione empirico-fisica del parametro bwd
+    // Gli elettroni backscatterati hanno molta meno energia,
+    // quindi si fermano in uno spazio circa 3-4 volte più breve.
+    double rapporto_bwd_fwd = 3.5;
+    double k_bwd_el_calibrato = k_fwd_el_calibrato * rapporto_bwd_fwd;
+
+    std::cout << "Calibrazione Kernel Elettronico (CSDA):" << std::endl;
+    std::cout << " - k_fwd: " << k_fwd_el_calibrato << " cm^-1" << std::endl;
+    std::cout << " - k_bwd: " << k_bwd_el_calibrato << " cm^-1" << std::endl;
+
+    double k_fwd_el = k_fwd_el_calibrato; 
+    double k_bwd_el = k_bwd_el_calibrato; 
 
     double k_s_fwd = 0.7; 
     double k_s_bwd = 2.9; 
@@ -544,7 +573,7 @@ int main ()
         return kernelExp{A, a_fwd, a_bwd};
     };
 
-    kernelExp kernel_el_primari = make_kernel_elettroni(R_csda_primari);
+    kernelExp kernel_el_primari = make_kernel_elettroni(R_max_electron);
     kernelExp kernel_el_scatter = make_kernel_elettroni(R_csda_scatter);
 
     std::cout << "Kernel elettronico primari:  a_fwd=" << kernel_el_primari.a_fwd
@@ -1088,33 +1117,6 @@ int main ()
     }
     std::cout << "k_s2_fwd (TERMA flusso Primario Scatter) ottimale: " << best_ks2f
         << ", k_s2_bwd (TERMA flusso Primario Scatter) ottimale: " << best_ks2b << std::endl;
-
-    // fit su costante kernel propagazione forward dose elettronica usando come riferimento
-    // distanza deposizione dose elettrone in acqua (valori)
-    double me_c2 = 0.511; // MeV
-    double alpha_edge = E_beam / me_c2;
-    double E_max_electron = E_beam * (2.0*alpha_edge) / (1.0 + 2.0*alpha_edge); 
-    // edge Compton, θ=π
-
-    double R_max_electron = Rcsda_raw_loglog(E_max_electron);
-
-    // criterio pratico: la coda in avanti del kernel deve annullarsi (≈95-99%
-    // dell'energia gia' depositata) proprio a questa profondita'
-    // elettroni si assorbono dopo range, integrale del flusso (exp neg) tra 0 e
-    // il range deve essere circa 0 (\sim 1%) -> svolgendo il calcolo si ottiene exp 
-    // che decade dopo dist = range con parametro calibrato
-    double soglia = 0.96;  
-    double k_fwd_el_calibrato = -std::log(1.0 - soglia) / R_max_electron; 
-
-    // Derivazione empirico-fisica del parametro bwd
-    // Gli elettroni backscatterati hanno molta meno energia,
-    // quindi si fermano in uno spazio circa 3-4 volte più breve.
-    double rapporto_bwd_fwd = 3.5;
-    double k_bwd_el_calibrato = k_fwd_el_calibrato * rapporto_bwd_fwd;
-
-    std::cout << "Calibrazione Kernel Elettronico (CSDA):" << std::endl;
-    std::cout << " - k_fwd: " << k_fwd_el_calibrato << " cm^-1" << std::endl;
-    std::cout << " - k_bwd: " << k_bwd_el_calibrato << " cm^-1" << std::endl;
 
     return 0;
 }
